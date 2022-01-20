@@ -5,6 +5,7 @@
  */
 
 #include "fl2000.h"
+#include <drm/drm_gem_atomic_helper.h>
 
 #define DRM_DRIVER_NAME "fl2000_drm"
 #define DRM_DRIVER_DESC "USB-HDMI"
@@ -113,6 +114,24 @@ static void fl2000_drm_release(struct drm_device *drm)
 }
 
 static struct drm_driver fl2000_drm_driver = {
+/* Adapted from https://github.com/DisplayLink/evdi/blob/devel/module/evdi_drm_drv.c */
+#if KERNEL_VERSION(5, 11, 0) <= LINUX_VERSION_CODE || defined(EL8)
+#elif KERNEL_VERSION(5, 9, 0) <= LINUX_VERSION_CODE
+	.gem_free_object_unlocked = fl2000_gem_free,
+#else
+	.gem_free_object = fl2000_gem_free,
+#endif
+	.gem_create_object = fl2000_gem_create_object_default_funcs,
+#if KERNEL_VERSION(5, 11, 0) <= LINUX_VERSION_CODE || defined(EL8)
+#else
+	.gem_vm_ops = &fl2000_gem_vm_ops,
+#endif
+
+#if KERNEL_VERSION(5, 11, 0) <= LINUX_VERSION_CODE || defined(EL8)
+#else
+	.gem_prime_get_sg_table = fl2000_gem_prime_get_sg_table,
+#endif
+
 	.driver_features = DRIVER_MODESET | DRIVER_GEM | DRIVER_ATOMIC,
 	.lastclose = drm_fb_helper_lastclose,
 	.ioctls = NULL,
@@ -121,16 +140,14 @@ static struct drm_driver fl2000_drm_driver = {
 
 	.prime_handle_to_fd = drm_gem_prime_handle_to_fd,
 	.prime_fd_to_handle = drm_gem_prime_fd_to_handle,
-	.gem_prime_import_sg_table = fl2000_gem_prime_import_sg_table,
 	.gem_prime_mmap = drm_gem_prime_mmap,
 	.dumb_create = fl2000_gem_dumb_create,
 
-	.gem_create_object = fl2000_gem_create_object_default_funcs,
-	.gem_free_object_unlocked = fl2000_gem_free,
-	.gem_vm_ops = &fl2000_gem_vm_ops,
-	.gem_prime_get_sg_table = fl2000_gem_prime_get_sg_table,
-	.gem_prime_vmap = fl2000_gem_prime_vmap,
-	.gem_prime_vunmap = fl2000_gem_prime_vunmap,
+	.gem_prime_import_sg_table = fl2000_gem_prime_import_sg_table,
+
+	// These are deprecated
+	// .gem_prime_vmap = fl2000_gem_prime_vmap,
+	// .gem_prime_vunmap = fl2000_gem_prime_vunmap,
 
 	.name = DRM_DRIVER_NAME,
 	.desc = DRM_DRIVER_DESC,
@@ -333,10 +350,8 @@ static int fl2000_display_check(struct drm_simple_display_pipe *pipe,
 
 	n = fb->format->num_planes;
 	if (n > 1) {
-		struct drm_format_name_buf format_name;
 
-		dev_err(drm->dev, "Only single plane RGB fbs are supported, got %d planes (%s)", n,
-			drm_get_format_name(fb->format->format, &format_name));
+		dev_err(drm->dev, "Only single plane RGB fbs are supported, got %d planes", n);
 		return -EINVAL;
 	}
 	return 0;
@@ -401,7 +416,8 @@ static const struct drm_simple_display_pipe_funcs fl2000_display_funcs = {
 	.disable = fl2000_display_disable,
 	.check = fl2000_display_check,
 	.update = fl2000_display_update,
-	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
+	/* Adapted from https://www.spinics.net/lists/linux-arm-msm/msg80769.html */
+	.prepare_fb = drm_gem_simple_display_pipe_prepare_fb,
 };
 
 static void fl2000_output_mode_set(struct drm_encoder *encoder, struct drm_display_mode *mode,

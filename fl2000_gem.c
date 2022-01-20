@@ -230,8 +230,8 @@ struct drm_gem_object *fl2000_gem_prime_import_sg_table(struct drm_device *drm,
 		ret = -ENOMEM;
 		goto error;
 	}
-
-	ret = drm_prime_sg_to_page_addr_arrays(sgt, obj->pages, NULL, obj->num_pages);
+	/* Adapted from: https://githubmate.com/repo/Xilinx/XRT/issues/5943 */
+	ret = drm_prime_sg_to_page_array(sgt, obj->pages, attach->dmabuf->size >> PAGE_SHIFT);
 	if (ret < 0) {
 		kvfree(obj->pages);
 		goto error;
@@ -250,15 +250,17 @@ error:
 	fl2000_gem_free_object(&obj->base);
 	return ERR_PTR(ret);
 }
-
-void *fl2000_gem_prime_vmap(struct drm_gem_object *gem_obj)
+/* Adapted from: https://lists.linuxfoundation.org/pipermail/virtualization/2021-January/051785.html */
+int fl2000_gem_prime_vmap(struct drm_gem_object *gem_obj, struct dma_buf_map *buf_map)
 {
 	struct fl2000_gem_object *obj = to_fl2000_gem_obj(gem_obj);
 
-	return obj->vaddr;
+	dma_buf_map_set_vaddr(buf_map, obj->vaddr);
+
+	return 0;
 }
 
-void fl2000_gem_prime_vunmap(struct drm_gem_object *gem_obj, void *vaddr)
+void fl2000_gem_prime_vunmap(struct drm_gem_object *gem_obj, struct dma_buf_map *buf_map)
 {
 	/* Do nothing */
 }

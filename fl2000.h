@@ -148,8 +148,8 @@ struct drm_gem_object *fl2000_gem_prime_import_sg_table(struct drm_device *dev,
 void fl2000_gem_free(struct drm_gem_object *gem_obj);
 extern const struct vm_operations_struct fl2000_gem_vm_ops;
 struct sg_table *fl2000_gem_prime_get_sg_table(struct drm_gem_object *gem_obj);
-void *fl2000_gem_prime_vmap(struct drm_gem_object *gem_obj);
-void fl2000_gem_prime_vunmap(struct drm_gem_object *gem_obj, void *vaddr);
+int fl2000_gem_prime_vmap(struct drm_gem_object *gem_obj, struct dma_buf_map *buf_map);
+void fl2000_gem_prime_vunmap(struct drm_gem_object *gem_obj, struct dma_buf_map *buf_map);
 
 /* Streaming transfer task */
 struct fl2000_stream;
