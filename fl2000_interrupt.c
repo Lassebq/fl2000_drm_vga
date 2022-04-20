@@ -24,9 +24,12 @@ static void fl2000_intr_work(struct work_struct *work)
 	int event;
 	struct fl2000_intr *intr = container_of(work, struct fl2000_intr, work);
 
+	dev_info(&intr->usb_dev->dev, "intr work");
 	event = fl2000_check_interrupt(intr->usb_dev);
-	if (event)
+	if (event) {
 		drm_kms_helper_hotplug_event(intr->drm);
+		//drm_helper_hpd_irq_event(intr->drm);
+	}
 }
 
 static void fl2000_intr_release(struct device *dev, void *res)
@@ -39,6 +42,7 @@ static void fl2000_intr_release(struct device *dev, void *res)
 	destroy_workqueue(intr->work_queue);
 	usb_free_coherent(usb_dev, INTR_BUFSIZE, intr->buf, intr->transfer_dma);
 	usb_free_urb(intr->urb);
+	dev_info(&usb_dev->dev, "intr release\n");
 }
 
 static void fl2000_intr_completion(struct urb *urb)

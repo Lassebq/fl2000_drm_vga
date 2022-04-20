@@ -26,38 +26,6 @@ static struct usb_device_id fl2000_id_table[] = {
 };
 MODULE_DEVICE_TABLE(usb, fl2000_id_table);
 
-/* Devices that are independent of interfaces, created for the lifetime of USB device instance */
-struct fl2000_devs {
-	struct regmap *regmap;
-	struct i2c_adapter *adapter;
-	struct component_match *match;
-	int active_if;
-};
-
-static struct component_master_ops fl2000_master_ops = {
-	.bind = fl2000_drm_bind,
-	.unbind = fl2000_drm_unbind,
-};
-
-static int fl2000_compare(struct device *dev, void *data)
-{
-	int i;
-	struct i2c_client *client = i2c_verify_client(dev);
-	static const char *const fl2000_supported_bridges[] = {
-		"it66121", /* IT66121 driver name*/
-	};
-
-	if (!client)
-		return 0;
-
-	/* Check this is a supported DRM bridge */
-	for (i = 0; i < ARRAY_SIZE(fl2000_supported_bridges); i++)
-		if (!strncmp(fl2000_supported_bridges[i], client->name, sizeof(client->name)))
-			return 1; /* Must be not 0 for success */
-
-	return 0;
-}
-
 static struct fl2000_devs *fl2000_get_devices(struct usb_device *usb_dev)
 {
 	struct fl2000_devs *devs;
@@ -73,8 +41,6 @@ static struct fl2000_devs *fl2000_get_devices(struct usb_device *usb_dev)
 	devs->adapter = fl2000_i2c_init(usb_dev);
 	if (IS_ERR(devs->adapter))
 		return ERR_CAST(devs->adapter);
-
-	component_match_add(&devs->adapter->dev, &devs->match, fl2000_compare, NULL);
 
 	dev_set_drvdata(&usb_dev->dev, devs);
 
@@ -117,8 +83,9 @@ static int fl2000_probe(struct usb_interface *interface, const struct usb_device
 
 	/* When all interfaces are up - proceed with registration */
 	if (devs->active_if == FL2000_ALL_IFS) {
-		ret = component_master_add_with_match(&devs->adapter->dev, &fl2000_master_ops,
-				devs->match);
+		fl2000_reset(usb_dev);
+		
+		fl2000_drm_init(usb_dev);
 		if (ret) {
 			dev_err(&usb_dev->dev, "Cannot register component master (%d)", ret);
 			return ret;
@@ -137,8 +104,10 @@ static void fl2000_disconnect(struct usb_interface *interface)
 	if (!devs)
 		return;
 
-	if (devs->active_if == FL2000_ALL_IFS)
-		component_master_del(&devs->adapter->dev, &fl2000_master_ops);
+	if (devs->active_if == FL2000_ALL_IFS) {
+		dev_info(&usb_dev->dev, "disconnecting");
+		fl2000_drm_destroy(usb_dev);
+	}
 
 	switch (iface_num) {
 	case FL2000_USBIF_AVCONTROL:

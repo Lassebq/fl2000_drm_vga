@@ -117,8 +117,8 @@ int fl2000_set_pll(struct usb_device *usb_dev, struct fl2000_pll *pll)
 
 	aclk.force_pll_up = true;
 	fl2000_add_bitmask(mask, union fl2000_vga_ctrl_reg_aclk, force_pll_up);
-	aclk.force_vga_connect = true;
-	fl2000_add_bitmask(mask, union fl2000_vga_ctrl_reg_aclk, force_vga_connect);
+	//aclk.force_vga_connect = true;
+	//fl2000_add_bitmask(mask, union fl2000_vga_ctrl_reg_aclk, force_vga_connect);
 	regmap_write_bits(regmap, FL2000_VGA_CTRL_REG_ACLK, mask, aclk.val);
 
 	return 0;
@@ -160,6 +160,7 @@ int fl2000_set_pixfmt(struct usb_device *usb_dev, u32 bytes_pix)
 
 	pxclk.dac_output_en = false;
 	fl2000_add_bitmask(mask, union fl2000_vga_cntrl_reg_pxclk, dac_output_en);
+	regmap_write_bits(regmap, FL2000_VGA_CTRL_REG_PXCLK, mask, pxclk.val);
 	pxclk.drop_cnt = false;
 	fl2000_add_bitmask(mask, union fl2000_vga_cntrl_reg_pxclk, drop_cnt);
 	pxclk.vga565_mode = (bytes_pix == 2);
@@ -310,22 +311,30 @@ int fl2000_check_interrupt(struct usb_device *usb_dev)
 	if (ret)
 		return 0; /* XXX: Cannot report error here */
 
-	if (status.hdmi_event || status.monitor_event || status.edid_event)
+	if (status.hdmi_event || status.monitor_event || status.edid_event) {
+		dev_info(&usb_dev->dev, "is sink event %d", status.vga_status);
 		sink_event = 1;
+	}
 
 	/* LBUF issues are recoverable */
-	if (status.lbuf_overflow)
+	if (status.lbuf_overflow) {
 		fl2000_add_bitmask(mask, union fl2000_vga_status_reg, lbuf_overflow);
-	if (status.lbuf_underflow)
+		dev_info(&usb_dev->dev, "lbuf_overflow");
+	}
+	if (status.lbuf_underflow) {
 		fl2000_add_bitmask(mask, union fl2000_vga_status_reg, lbuf_underflow);
+		dev_info(&usb_dev->dev, "lbuf_underflow");
+	}
 	regmap_write_bits(regmap, FL2000_VGA_STATUS_REG, mask, status.val);
 
 	if (status.lbuf_halt) {
 		/* TODO: Reset LBUF using regmap_field for lbuf_sw_rst */
+		dev_info(&usb_dev->dev, "lbuf_halt");
 	}
 
 	if (status.vga_error) {
 		/* TODO: Don't know how to recover here */
+		dev_info(&usb_dev->dev, "vga frame drop");
 	}
 
 	return sink_event;

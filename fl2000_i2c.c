@@ -15,12 +15,12 @@
 #define I2C_REG_DATA_SIZE  (sizeof(u8))
 #define I2C_XFER_ADDR_MASK (~0x3ul)
 
-static inline int fl2000_i2c_read_dword(struct usb_device *usb_dev, u16 addr, u8 offset, u32 *data)
+inline int fl2000_i2c_read_dword(struct usb_device *usb_dev, u16 addr, u8 offset, u32 *data)
 {
 	return fl2000_i2c_dword(usb_dev, true, addr, offset, data);
 }
 
-static inline int fl2000_i2c_write_dword(struct usb_device *usb_dev, u16 addr, u8 offset, u32 *data)
+inline int fl2000_i2c_write_dword(struct usb_device *usb_dev, u16 addr, u8 offset, u32 *data)
 {
 	return fl2000_i2c_dword(usb_dev, false, addr, offset, data);
 }

@@ -31,6 +31,7 @@
 #include <drm/drm_fourcc.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_gem_shmem_helper.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_simple_kms_helper.h>
 #include <drm/drm_crtc_helper.h>
@@ -123,33 +124,27 @@ struct fl2000_pll {
 	u32 function;
 };
 
-struct fl2000_gem_object {
-	struct drm_gem_object base;
-	size_t num_pages;
-	struct page **pages;
-	struct sg_table *sgt;
-	void *vaddr;
+struct fl2000_drm_if {
+	struct usb_device *usb_dev;
+	struct device *dmadev;
+	struct drm_device drm;
+	struct drm_simple_display_pipe pipe;
+	struct drm_connector connector;
+	struct fl2000_stream *stream;
+	struct fl2000_intr *intr;
+};
+
+/* Devices that are independent of interfaces, created for the lifetime of USB device instance */
+struct fl2000_devs {
+	struct regmap *regmap;
+	struct i2c_adapter *adapter;
+	int active_if;
+	struct fl2000_drm_if* drm_if;
 };
 
 /* Timeout in us for I2C read/write operations */
 #define I2C_RDWR_INTERVAL (200)
 #define I2C_RDWR_TIMEOUT  (256 * 1000)
-
-#define to_fl2000_gem_obj(gem_obj) container_of(gem_obj, struct fl2000_gem_object, base)
-
-/* GEM buffers */
-int fl2000_gem_mmap(struct file *filp, struct vm_area_struct *vma);
-struct drm_gem_object *fl2000_gem_create_object_default_funcs(struct drm_device *dev, size_t size);
-int fl2000_gem_dumb_create(struct drm_file *file_priv, struct drm_device *drm,
-			   struct drm_mode_create_dumb *args);
-struct drm_gem_object *fl2000_gem_prime_import_sg_table(struct drm_device *dev,
-							struct dma_buf_attachment *attach,
-							struct sg_table *sgt);
-void fl2000_gem_free(struct drm_gem_object *gem_obj);
-extern const struct vm_operations_struct fl2000_gem_vm_ops;
-struct sg_table *fl2000_gem_prime_get_sg_table(struct drm_gem_object *gem_obj);
-int fl2000_gem_prime_vmap(struct drm_gem_object *gem_obj, struct dma_buf_map *buf_map);
-void fl2000_gem_prime_vunmap(struct drm_gem_object *gem_obj, struct dma_buf_map *buf_map);
 
 /* Streaming transfer task */
 struct fl2000_stream;
@@ -171,6 +166,13 @@ void fl2000_intr_destroy(struct usb_device *usb_dev);
 /* I2C adapter interface creation */
 struct i2c_adapter *fl2000_i2c_init(struct usb_device *usb_dev);
 
+/* I2C adapter functions */
+int fl2000_i2c_read_dword(struct usb_device *usb_dev, u16 addr, u8 offset, u32 *data);
+int fl2000_i2c_write_dword(struct usb_device *usb_dev, u16 addr, u8 offset, u32 *data);
+
+/* Connector functions */
+int fl2000_connector_init(struct fl2000_drm_if *drm_if);
+
 /* Register map creation */
 struct regmap *fl2000_regmap_init(struct usb_device *usb_dev);
 
@@ -187,7 +189,7 @@ int fl2000_check_interrupt(struct usb_device *usb_dev);
 int fl2000_i2c_dword(struct usb_device *usb_dev, bool read, u16 addr, u8 offset, u32 *data);
 
 /* DRM device creation */
-int fl2000_drm_bind(struct device *master);
-void fl2000_drm_unbind(struct device *master);
+int fl2000_drm_init(struct usb_device *usb_dev);
+void fl2000_drm_destroy(struct usb_device *usb_dev);
 
 #endif /* __FL2000_DRM_H__ */
