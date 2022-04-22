@@ -14,7 +14,7 @@ if [ ! -f const_structs.checkpatch ]; then
 	wget https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/scripts/const_structs.checkpatch
 fi
 
-for file in {,bridge/}*.[ch]
+for file in *.[ch]
 do
 	if [[ $file == $mod_pattern ]]; then
 		continue

@@ -58,14 +58,14 @@ enum fl2000_interface {
  * Sets bits to 1 in '__mask' variable that correspond to field '__field' of
  * structure type '__type'. Tested only with u32 data types
  */
-#define fl2000_add_bitmask(__mask, __type, __field) \
-	({                                          \
-		union {                             \
-			__type __umask;             \
-			typeof(__mask) __val;       \
-		} __aligned(4) __data;              \
-		__data.__umask.__field = ~0;        \
-		(__mask) |= __data.__val;           \
+#define fl2000_add_bitmask(__mask, __type, __field)                            \
+	({                                                                     \
+		union {                                                        \
+			__type __umask;                                        \
+			typeof(__mask) __val;                                  \
+		} __aligned(4) __data;                                         \
+		__data.__umask.__field = ~0;                                   \
+		(__mask) |= __data.__val;                                      \
 	})
 
 static inline int fl2000_submit_urb(struct urb *urb)
@@ -91,7 +91,8 @@ static inline int fl2000_submit_urb(struct urb *urb)
 	return ret;
 }
 
-static inline int fl2000_urb_status(struct usb_device *usb_dev, int status, int pipe)
+static inline int fl2000_urb_status(struct usb_device *usb_dev, int status,
+				    int pipe)
 {
 	int ret = status;
 
@@ -155,7 +156,7 @@ struct fl2000 {
 	struct workqueue_struct *stream_work_queue;
 	struct semaphore stream_work_sem;
 	bool enabled;
-	
+
 	struct usb_anchor anchor;
 
 	/* Interrupt handling */
@@ -169,16 +170,18 @@ struct fl2000 {
 
 /* Timeout in us for I2C read/write operations */
 #define I2C_RDWR_INTERVAL (200)
-#define I2C_RDWR_TIMEOUT  (256 * 1000)
+#define I2C_RDWR_TIMEOUT (256 * 1000)
 
 /* Streaming transfer task */
 int fl2000_stream_create(struct fl2000 *fl2000_dev);
 void fl2000_stream_release(struct fl2000 *fl2000_dev);
 
 /* Streaming interface */
-int fl2000_stream_mode_set(struct fl2000 *fl2000_dev, int pixels, u32 bytes_pix);
-void fl2000_stream_compress(struct fl2000 *fl2000_dev, void *src, unsigned int height,
-			    unsigned int width, unsigned int pitch);
+int fl2000_stream_mode_set(struct fl2000 *fl2000_dev, int pixels,
+			   u32 bytes_pix);
+void fl2000_stream_compress(struct fl2000 *fl2000_dev, void *src,
+			    unsigned int height, unsigned int width,
+			    unsigned int pitch);
 int fl2000_stream_enable(struct fl2000 *fl2000_dev);
 void fl2000_stream_disable(struct fl2000 *fl2000_dev);
 
@@ -190,8 +193,10 @@ void fl2000_intr_release(struct fl2000 *fl2000_dev);
 struct i2c_adapter *fl2000_i2c_init(struct usb_device *usb_dev);
 
 /* I2C adapter functions */
-int fl2000_i2c_read_dword(struct usb_device *usb_dev, u16 addr, u8 offset, u32 *data);
-int fl2000_i2c_write_dword(struct usb_device *usb_dev, u16 addr, u8 offset, u32 *data);
+int fl2000_i2c_read_dword(struct usb_device *usb_dev, u16 addr, u8 offset,
+			  u32 *data);
+int fl2000_i2c_write_dword(struct usb_device *usb_dev, u16 addr, u8 offset,
+			   u32 *data);
 
 /* Connector functions */
 int fl2000_connector_init(struct fl2000 *fl2000_dev);
@@ -205,11 +210,13 @@ int fl2000_usb_magic(struct usb_device *usb_dev);
 int fl2000_afe_magic(struct usb_device *usb_dev);
 int fl2000_set_transfers(struct usb_device *usb_dev);
 int fl2000_set_pixfmt(struct usb_device *usb_dev, u32 bytes_pix);
-int fl2000_set_timings(struct usb_device *usb_dev, struct fl2000_timings *timings);
+int fl2000_set_timings(struct usb_device *usb_dev,
+		       struct fl2000_timings *timings);
 int fl2000_set_pll(struct usb_device *usb_dev, struct fl2000_pll *pll);
 int fl2000_enable_interrupts(struct usb_device *usb_dev);
 int fl2000_check_interrupt(struct usb_device *usb_dev);
-int fl2000_i2c_dword(struct usb_device *usb_dev, bool read, u16 addr, u8 offset, u32 *data);
+int fl2000_i2c_dword(struct usb_device *usb_dev, bool read, u16 addr, u8 offset,
+		     u32 *data);
 
 /* DRM device creation */
 extern const struct drm_driver fl2000_drm_driver;

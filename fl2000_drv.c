@@ -18,7 +18,8 @@
 
 static struct usb_driver fl2000_driver;
 
-static int fl2000_probe(struct usb_interface *interface, const struct usb_device_id *usb_dev_id)
+static int fl2000_probe(struct usb_interface *interface,
+			const struct usb_device_id *usb_dev_id)
 {
 	int ret = 0;
 	u8 iface_num = interface->cur_altsetting->desc.bInterfaceNumber;
@@ -29,22 +30,21 @@ static int fl2000_probe(struct usb_interface *interface, const struct usb_device
 	if (iface_num != FL2000_USBIF_AVCONTROL)
 		return -ENODEV;
 
-	if (usb_dev->speed < USB_SPEED_HIGH)
-	{
+	if (usb_dev->speed < USB_SPEED_HIGH) {
 		dev_err(&usb_dev->dev, "USB 1.1 is not supported!");
 		return -ENODEV;
 	}
 
-	if (usb_dev->speed == USB_SPEED_HIGH)
-	{
+	if (usb_dev->speed == USB_SPEED_HIGH) {
 		dev_err(&usb_dev->dev, "Using USB 2.0");
 		return -ENODEV;
 	}
 
-	fl2000_dev = devm_drm_dev_alloc(&usb_dev->dev, &fl2000_drm_driver, struct fl2000, drm);
-	if (IS_ERR(fl2000_dev))
-	{
-		dev_err(&usb_dev->dev, "Cannot allocate DRM structure (%ld)", PTR_ERR(fl2000_dev));
+	fl2000_dev = devm_drm_dev_alloc(&usb_dev->dev, &fl2000_drm_driver,
+					struct fl2000, drm);
+	if (IS_ERR(fl2000_dev)) {
+		dev_err(&usb_dev->dev, "Cannot allocate DRM structure (%ld)",
+			PTR_ERR(fl2000_dev));
 		return PTR_ERR(fl2000_dev);
 	}
 
@@ -65,7 +65,8 @@ static int fl2000_probe(struct usb_interface *interface, const struct usb_device
 
 	if_stream = usb_ifnum_to_if(usb_dev, FL2000_USBIF_STREAMING);
 	if (!if_stream) {
-		dev_err(&usb_dev->dev, "interface %d not found", FL2000_USBIF_STREAMING);
+		dev_err(&usb_dev->dev, "interface %d not found",
+			FL2000_USBIF_STREAMING);
 		return -ENXIO;
 	}
 	ret = usb_driver_claim_interface(&fl2000_driver, if_stream, fl2000_dev);
@@ -76,11 +77,13 @@ static int fl2000_probe(struct usb_interface *interface, const struct usb_device
 
 	if_interrupt = usb_ifnum_to_if(usb_dev, FL2000_USBIF_INTERRUPT);
 	if (!if_interrupt) {
-		dev_err(&usb_dev->dev, "interface %d not found", FL2000_USBIF_INTERRUPT);
+		dev_err(&usb_dev->dev, "interface %d not found",
+			FL2000_USBIF_INTERRUPT);
 		ret = -ENXIO;
 		goto err_unclaim_stream_interface;
 	}
-	ret = usb_driver_claim_interface(&fl2000_driver, if_interrupt, fl2000_dev);
+	ret = usb_driver_claim_interface(&fl2000_driver, if_interrupt,
+					 fl2000_dev);
 	if (ret < 0) {
 		ret = -EBUSY;
 		goto err_unclaim_stream_interface;
@@ -130,7 +133,7 @@ static int fl2000_resume(struct usb_interface *interface)
 }
 
 static struct usb_device_id fl2000_id_table[] = {
-	{USB_DEVICE(USB_VENDOR_FRESCO_LOGIC, USB_PRODUCT_FL2000)},
+	{ USB_DEVICE(USB_VENDOR_FRESCO_LOGIC, USB_PRODUCT_FL2000) },
 	{},
 };
 MODULE_DEVICE_TABLE(usb, fl2000_id_table);

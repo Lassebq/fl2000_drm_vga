@@ -23,10 +23,9 @@
 
 #define FL2000_URB_TIMEOUT 100
 
-
 struct fl2000_stream_buf {
 	struct list_head list;
-	struct fl2000* parent;
+	struct fl2000 *parent;
 	struct sg_table sgt;
 	struct page **pages;
 	int nr_pages;
@@ -38,7 +37,7 @@ struct fl2000_stream_buf {
 static void fl2000_free_sb(struct fl2000_stream_buf *sb)
 {
 	int i;
-	struct fl2000* fl2000_dev = sb->parent;
+	struct fl2000 *fl2000_dev = sb->parent;
 
 	vunmap(sb->vaddr);
 
@@ -52,7 +51,8 @@ static void fl2000_free_sb(struct fl2000_stream_buf *sb)
 	drmm_kfree(&fl2000_dev->drm, sb);
 }
 
-static struct fl2000_stream_buf *fl2000_alloc_sb(struct fl2000* fl2000_dev, size_t size)
+static struct fl2000_stream_buf *fl2000_alloc_sb(struct fl2000 *fl2000_dev,
+						 size_t size)
 {
 	int i, ret;
 	struct fl2000_stream_buf *sb;
@@ -67,7 +67,8 @@ static struct fl2000_stream_buf *fl2000_alloc_sb(struct fl2000* fl2000_dev, size
 	sb->in_flight = 0;
 	sb->parent = fl2000_dev;
 
-	sb->pages = drmm_kcalloc(&fl2000_dev->drm, nr_pages, sizeof(*sb->pages), GFP_KERNEL);
+	sb->pages = drmm_kcalloc(&fl2000_dev->drm, nr_pages, sizeof(*sb->pages),
+				 GFP_KERNEL);
 	if (!sb->pages)
 		goto error;
 
@@ -77,7 +78,8 @@ static struct fl2000_stream_buf *fl2000_alloc_sb(struct fl2000* fl2000_dev, size
 			goto error;
 	}
 
-	ret = sg_alloc_table_from_pages(&sb->sgt, sb->pages, nr_pages, 0, size, GFP_KERNEL);
+	ret = sg_alloc_table_from_pages(&sb->sgt, sb->pages, nr_pages, 0, size,
+					GFP_KERNEL);
 	if (ret != 0)
 		goto error;
 
@@ -99,15 +101,18 @@ static void fl2000_stream_put_buffers(struct fl2000 *fl2000_dev)
 {
 	struct fl2000_stream_buf *cur_sb, *temp_sb;
 
-	list_for_each_entry_safe (cur_sb, temp_sb, &fl2000_dev->render_list, list) {
+	list_for_each_entry_safe (cur_sb, temp_sb, &fl2000_dev->render_list,
+				  list) {
 		list_del(&cur_sb->list);
 		fl2000_free_sb(cur_sb);
 	}
-	list_for_each_entry_safe (cur_sb, temp_sb, &fl2000_dev->transmit_list, list) {
+	list_for_each_entry_safe (cur_sb, temp_sb, &fl2000_dev->transmit_list,
+				  list) {
 		list_del(&cur_sb->list);
 		fl2000_free_sb(cur_sb);
 	}
-	list_for_each_entry_safe (cur_sb, temp_sb, &fl2000_dev->wait_list, list) {
+	list_for_each_entry_safe (cur_sb, temp_sb, &fl2000_dev->wait_list,
+				  list) {
 		list_del(&cur_sb->list);
 		fl2000_free_sb(cur_sb);
 	}
@@ -173,7 +178,8 @@ static void fl2000_stream_data_completion(struct urb *urb)
 static void fl2000_stream_work(struct work_struct *work)
 {
 	int ret;
-	struct fl2000 *fl2000_dev = container_of(work, struct fl2000, stream_work);
+	struct fl2000 *fl2000_dev =
+		container_of(work, struct fl2000, stream_work);
 	struct usb_device *usb_dev = fl2000_dev->usb_dev;
 	struct fl2000_stream_buf *cur_sb;
 	struct urb *data_urb;
@@ -192,13 +198,16 @@ static void fl2000_stream_work(struct work_struct *work)
 		 */
 		if (list_empty(&fl2000_dev->transmit_list)) {
 			if (list_empty(&fl2000_dev->wait_list))
-				cur_sb = list_last_entry(&fl2000_dev->render_list,
-						          struct fl2000_stream_buf, list);
+				cur_sb = list_last_entry(
+					&fl2000_dev->render_list,
+					struct fl2000_stream_buf, list);
 			else
-				cur_sb = list_last_entry(&fl2000_dev->wait_list,
-						          struct fl2000_stream_buf, list);
+				cur_sb = list_last_entry(
+					&fl2000_dev->wait_list,
+					struct fl2000_stream_buf, list);
 		} else {
-			cur_sb = list_first_entry(&fl2000_dev->transmit_list, struct fl2000_stream_buf,
+			cur_sb = list_first_entry(&fl2000_dev->transmit_list,
+						  struct fl2000_stream_buf,
 						  list);
 		}
 
@@ -223,8 +232,10 @@ static void fl2000_stream_work(struct work_struct *work)
 		 * transfer_buffer field of URB which is unused due to SGT
 		 */
 		//size_t buf_size = (stream->buf_size - 50*1024) & ~(size_t)7;
-		usb_fill_bulk_urb(data_urb, usb_dev, usb_sndbulkpipe(usb_dev, 1), NULL,
-				  fl2000_dev->buf_size, fl2000_stream_data_completion, cur_sb);
+		usb_fill_bulk_urb(data_urb, usb_dev,
+				  usb_sndbulkpipe(usb_dev, 1), NULL,
+				  fl2000_dev->buf_size,
+				  fl2000_stream_data_completion, cur_sb);
 		data_urb->interval = 0;
 		data_urb->sg = cur_sb->sgt.sgl;
 		data_urb->num_sgs = cur_sb->sgt.nents;
@@ -260,7 +271,8 @@ static void fl2000_xrgb888_to_rgb565_line(u16 *dbuf, u32 *sbuf, u32 pixels)
 	unsigned int x;
 
 	for (x = 0; x < pixels; x++) {
-		u16 val565 = ((sbuf[x] & 0x00F80000) >> 8) | ((sbuf[x] & 0x0000FC00) >> 5) |
+		u16 val565 = ((sbuf[x] & 0x00F80000) >> 8) |
+			     ((sbuf[x] & 0x0000FC00) >> 5) |
 			     ((sbuf[x] & 0x000000F8) >> 3);
 		dbuf[x ^ 2] = val565;
 	}
@@ -271,20 +283,22 @@ static void fl2000_xrgb888_to_rgb332_line(u8 *dbuf, u32 *sbuf, u32 pixels)
 	unsigned int x;
 
 	for (x = 0; x < pixels; x++) {
-		u8 val332 = ((sbuf[x] & 0x00e00000) >> 16) | ((sbuf[x] & 0x0000e000) >> 11) |
-			     ((sbuf[x] & 0x000000c0) >> 6);
+		u8 val332 = ((sbuf[x] & 0x00e00000) >> 16) |
+			    ((sbuf[x] & 0x0000e000) >> 11) |
+			    ((sbuf[x] & 0x000000c0) >> 6);
 		dbuf[x ^ 4] = val332;
 	}
 }
 
-void fl2000_stream_compress(struct fl2000 *fl2000_dev, void *src, unsigned int height,
-			    unsigned int width, unsigned int pitch)
+void fl2000_stream_compress(struct fl2000 *fl2000_dev, void *src,
+			    unsigned int height, unsigned int width,
+			    unsigned int pitch)
 {
 	struct fl2000_stream_buf *cur_sb;
 	unsigned int y;
 	void *dst;
 	u32 dst_line_len;
-	
+
 	//BUG_ON(list_empty(&stream->render_list));
 
 	spin_lock_irq(&fl2000_dev->list_lock);
@@ -293,7 +307,8 @@ void fl2000_stream_compress(struct fl2000 *fl2000_dev, void *src, unsigned int h
 	if (list_empty(&fl2000_dev->render_list))
 		goto list_empty;
 
-	cur_sb = list_first_entry(&fl2000_dev->render_list, struct fl2000_stream_buf, list);
+	cur_sb = list_first_entry(&fl2000_dev->render_list,
+				  struct fl2000_stream_buf, list);
 
 	/* Reallocate buffers which are the wrong size */
 	if (cur_sb->size != fl2000_dev->buf_size) {
@@ -305,7 +320,7 @@ void fl2000_stream_compress(struct fl2000 *fl2000_dev, void *src, unsigned int h
 	}
 	dst = cur_sb->vaddr;
 	dst_line_len = width * fl2000_dev->bytes_pix;
-	
+
 	for (y = 0; y < height; y++) {
 		switch (fl2000_dev->bytes_pix) {
 		case 1:
@@ -340,7 +355,9 @@ int fl2000_stream_mode_set(struct fl2000 *fl2000_dev, int pixels, u32 bytes_pix)
 
 	spin_lock_irq(&fl2000_dev->list_lock);
 	/* Queue buffers */
-	if (list_empty(&fl2000_dev->render_list) && list_empty(&fl2000_dev->wait_list) && list_empty(&fl2000_dev->transmit_list)) {
+	if (list_empty(&fl2000_dev->render_list) &&
+	    list_empty(&fl2000_dev->wait_list) &&
+	    list_empty(&fl2000_dev->transmit_list)) {
 		fl2000_stream_get_buffers(fl2000_dev, size);
 	}
 	fl2000_dev->buf_size = size;
@@ -380,11 +397,13 @@ void fl2000_stream_disable(struct fl2000 *fl2000_dev)
 
 	spin_lock_irq(&fl2000_dev->list_lock);
 	while (!list_empty(&fl2000_dev->transmit_list)) {
-		cur_sb = list_first_entry(&fl2000_dev->transmit_list, struct fl2000_stream_buf, list);
+		cur_sb = list_first_entry(&fl2000_dev->transmit_list,
+					  struct fl2000_stream_buf, list);
 		list_move_tail(&cur_sb->list, &fl2000_dev->render_list);
 	}
 	while (!list_empty(&fl2000_dev->wait_list)) {
-		cur_sb = list_first_entry(&fl2000_dev->wait_list, struct fl2000_stream_buf, list);
+		cur_sb = list_first_entry(&fl2000_dev->wait_list,
+					  struct fl2000_stream_buf, list);
 		list_move_tail(&cur_sb->list, &fl2000_dev->render_list);
 	}
 	spin_unlock(&fl2000_dev->list_lock);
@@ -409,7 +428,8 @@ int fl2000_stream_create(struct fl2000 *fl2000_dev)
 	/* Altsetting 1 on interface 0 */
 	ret = usb_set_interface(usb_dev, FL2000_USBIF_AVCONTROL, 1);
 	if (ret) {
-		dev_err(&usb_dev->dev, "Cannot set streaming interface for bulk transfers");
+		dev_err(&usb_dev->dev,
+			"Cannot set streaming interface for bulk transfers");
 		return ret;
 	}
 

@@ -10,7 +10,7 @@ fi
 #   AlignConsecutiveMacros: true
 #   AlignConsecutiveBitFields: true
 
-for file in {,bridge/}*.[ch]
+for file in *.[ch]
 do
 	if [[ $file == $mod_pattern ]]; then
 		continue

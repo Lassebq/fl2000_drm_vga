@@ -10,22 +10,25 @@
  * operation. Each read or write operate with 8-bit (1-byte) data. Every exchange shall consist of 2
  * messages (sub-address + data) combined. USB xfer always bounds address to 4-byte boundary
  */
-#define I2C_CMESSAGES_NUM  2
-#define I2C_REG_ADDR_SIZE  (sizeof(u8))
-#define I2C_REG_DATA_SIZE  (sizeof(u8))
+#define I2C_CMESSAGES_NUM 2
+#define I2C_REG_ADDR_SIZE (sizeof(u8))
+#define I2C_REG_DATA_SIZE (sizeof(u8))
 #define I2C_XFER_ADDR_MASK (~0x3ul)
 
-inline int fl2000_i2c_read_dword(struct usb_device *usb_dev, u16 addr, u8 offset, u32 *data)
+inline int fl2000_i2c_read_dword(struct usb_device *usb_dev, u16 addr,
+				 u8 offset, u32 *data)
 {
 	return fl2000_i2c_dword(usb_dev, true, addr, offset, data);
 }
 
-inline int fl2000_i2c_write_dword(struct usb_device *usb_dev, u16 addr, u8 offset, u32 *data)
+inline int fl2000_i2c_write_dword(struct usb_device *usb_dev, u16 addr,
+				  u8 offset, u32 *data)
 {
 	return fl2000_i2c_dword(usb_dev, false, addr, offset, data);
 }
 
-static int fl2000_i2c_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs, int num)
+static int fl2000_i2c_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs,
+			   int num)
 {
 	int ret;
 	bool read;
@@ -59,7 +62,8 @@ static int fl2000_i2c_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs, in
 	 * is completely crippled. Oh, yes, it is crippled :(
 	 */
 	if (read) {
-		ret = fl2000_i2c_read_dword(adapter->algo_data, addr, offset, &data.w);
+		ret = fl2000_i2c_read_dword(adapter->algo_data, addr, offset,
+					    &data.w);
 		if (ret)
 			return ret;
 
@@ -69,13 +73,15 @@ static int fl2000_i2c_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs, in
 		 * to read before write in order not to corrupt unrelated registers in case if we do
 		 * not write whole dword
 		 */
-		ret = fl2000_i2c_read_dword(adapter->algo_data, addr, offset, &data.w);
+		ret = fl2000_i2c_read_dword(adapter->algo_data, addr, offset,
+					    &data.w);
 		if (ret)
 			return ret;
 
 		data.b[idx] = msgs[0].buf[1];
 
-		ret = fl2000_i2c_write_dword(adapter->algo_data, addr, offset, &data.w);
+		ret = fl2000_i2c_write_dword(adapter->algo_data, addr, offset,
+					     &data.w);
 		if (ret)
 			return ret;
 	}
@@ -117,7 +123,8 @@ struct i2c_adapter *fl2000_i2c_init(struct usb_device *usb_dev)
 	u8 usb_path[32];
 
 	/* Adapter must be allocated before anything else */
-	adapter = devres_alloc(fl2000_i2c_adapter_release, sizeof(*adapter), GFP_KERNEL);
+	adapter = devres_alloc(fl2000_i2c_adapter_release, sizeof(*adapter),
+			       GFP_KERNEL);
 	if (!adapter)
 		return ERR_PTR(-ENOMEM);
 	devres_add(&usb_dev->dev, adapter);
@@ -137,8 +144,9 @@ struct i2c_adapter *fl2000_i2c_init(struct usb_device *usb_dev)
 	}
 
 	usb_make_path(usb_dev, usb_path, sizeof(usb_path));
-	dev_dbg(&usb_dev->dev, "Created FL2000 bridge I2C bus %d at interface %s",
-			i2c_adapter_id(adapter), usb_path);
+	dev_dbg(&usb_dev->dev,
+		"Created FL2000 bridge I2C bus %d at interface %s",
+		i2c_adapter_id(adapter), usb_path);
 
 	return adapter;
 }

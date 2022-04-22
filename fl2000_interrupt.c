@@ -11,7 +11,8 @@
 static void fl2000_intr_work(struct work_struct *work)
 {
 	int event;
-	struct fl2000 *fl2000_dev = container_of(work, struct fl2000, intr_work);
+	struct fl2000 *fl2000_dev =
+		container_of(work, struct fl2000, intr_work);
 
 	event = fl2000_check_interrupt(fl2000_dev->usb_dev);
 	if (event) {
@@ -25,7 +26,8 @@ void fl2000_intr_release(struct fl2000 *fl2000_dev)
 	usb_poison_urb(fl2000_dev->intr_urb);
 	cancel_work_sync(&fl2000_dev->intr_work);
 	destroy_workqueue(fl2000_dev->intr_work_queue);
-	usb_free_coherent(fl2000_dev->usb_dev, INTR_BUFSIZE, fl2000_dev->intr_buf, fl2000_dev->transfer_dma);
+	usb_free_coherent(fl2000_dev->usb_dev, INTR_BUFSIZE,
+			  fl2000_dev->intr_buf, fl2000_dev->transfer_dma);
 	usb_free_urb(fl2000_dev->intr_urb);
 }
 
@@ -73,7 +75,8 @@ int fl2000_intr_create(struct fl2000 *fl2000_dev)
 	int ret;
 	struct usb_device *usb_dev = fl2000_dev->usb_dev;
 	struct usb_endpoint_descriptor *desc;
-	struct usb_interface *interface = fl2000_dev->intf[FL2000_USBIF_INTERRUPT];
+	struct usb_interface *interface =
+		fl2000_dev->intf[FL2000_USBIF_INTERRUPT];
 
 	/* There's only one altsetting (#0) and one endpoint (#3) in the interrupt interface (#2)
 	 * but lets try and "find" it anyway
@@ -94,7 +97,8 @@ int fl2000_intr_create(struct fl2000 *fl2000_dev)
 		return -ENOMEM;
 	}
 
-	fl2000_dev->intr_buf = usb_alloc_coherent(usb_dev, INTR_BUFSIZE, GFP_KERNEL, &fl2000_dev->transfer_dma);
+	fl2000_dev->intr_buf = usb_alloc_coherent(
+		usb_dev, INTR_BUFSIZE, GFP_KERNEL, &fl2000_dev->transfer_dma);
 	if (!fl2000_dev->intr_buf) {
 		dev_err(&usb_dev->dev, "Cannot allocate interrupt data");
 		fl2000_intr_release(fl2000_dev);
@@ -109,10 +113,13 @@ int fl2000_intr_create(struct fl2000 *fl2000_dev)
 	}
 
 	/* Interrupt URB configuration is static, including allocated buffer */
-	usb_fill_int_urb(fl2000_dev->intr_urb, usb_dev, usb_rcvintpipe(usb_dev, 3),
-			 fl2000_dev->intr_buf, INTR_BUFSIZE, fl2000_intr_completion, fl2000_dev, fl2000_dev->poll_interval);
+	usb_fill_int_urb(fl2000_dev->intr_urb, usb_dev,
+			 usb_rcvintpipe(usb_dev, 3), fl2000_dev->intr_buf,
+			 INTR_BUFSIZE, fl2000_intr_completion, fl2000_dev,
+			 fl2000_dev->poll_interval);
 	fl2000_dev->intr_urb->transfer_dma = fl2000_dev->transfer_dma;
-	fl2000_dev->intr_urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP; /* use urb->transfer_dma */
+	fl2000_dev->intr_urb->transfer_flags |=
+		URB_NO_TRANSFER_DMA_MAP; /* use urb->transfer_dma */
 
 	/* Start checking for interrupts */
 	ret = usb_submit_urb(fl2000_dev->intr_urb, GFP_KERNEL);
