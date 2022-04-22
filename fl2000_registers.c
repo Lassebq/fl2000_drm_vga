@@ -115,6 +115,7 @@ int fl2000_set_pll(struct usb_device *usb_dev, struct fl2000_pll *pll)
 	pll_reg.function = pll->function;
 	regmap_write(regmap, FL2000_VGA_PLL_REG, pll_reg.val);
 
+	dev_info(&usb_dev->dev, "pll reg %x", pll_reg.val);
 	aclk.force_pll_up = true;
 	fl2000_add_bitmask(mask, union fl2000_vga_ctrl_reg_aclk, force_pll_up);
 	//aclk.force_vga_connect = true;
@@ -165,7 +166,7 @@ int fl2000_set_pixfmt(struct usb_device *usb_dev, u32 bytes_pix)
 	fl2000_add_bitmask(mask, union fl2000_vga_cntrl_reg_pxclk, drop_cnt);
 	pxclk.vga565_mode = (bytes_pix == 2);
 	fl2000_add_bitmask(mask, union fl2000_vga_cntrl_reg_pxclk, vga565_mode);
-	pxclk.vga332_mode = false;
+	pxclk.vga332_mode = (bytes_pix == 1);
 	fl2000_add_bitmask(mask, union fl2000_vga_cntrl_reg_pxclk, vga332_mode);
 	pxclk.vga555_mode = false;
 	fl2000_add_bitmask(mask, union fl2000_vga_cntrl_reg_pxclk, vga555_mode);

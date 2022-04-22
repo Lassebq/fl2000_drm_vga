@@ -107,7 +107,6 @@ static const struct i2c_adapter_quirks fl2000_i2c_quirks = {
 static void fl2000_i2c_adapter_release(struct device *dev, void *res)
 {
 	struct i2c_adapter *adapter = res;
-	dev_info(dev, "!!! fl2000_i2c_adapter_release");
 	i2c_del_adapter(adapter);
 }
 

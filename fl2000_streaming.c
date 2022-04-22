@@ -24,26 +24,9 @@
 #define FL2000_URB_TIMEOUT 100
 
 
-struct fl2000_stream {
-	struct usb_device *usb_dev;
-	struct drm_crtc *crtc;
-	/* Each buffer journey: render->transmit->wait->... */
-	struct list_head render_list;
-	struct list_head transmit_list;
-	struct list_head wait_list;
-	spinlock_t list_lock; /* List access from bh and interrupt contexts */
-	size_t buf_size;
-	int bytes_pix;
-	struct work_struct work;
-	struct workqueue_struct *work_queue;
-	struct semaphore work_sem;
-	bool enabled;
-	struct usb_anchor anchor;
-};
-
 struct fl2000_stream_buf {
 	struct list_head list;
-	struct fl2000_stream* parent;
+	struct fl2000* parent;
 	struct sg_table sgt;
 	struct page **pages;
 	int nr_pages;
@@ -55,6 +38,7 @@ struct fl2000_stream_buf {
 static void fl2000_free_sb(struct fl2000_stream_buf *sb)
 {
 	int i;
+	struct fl2000* fl2000_dev = sb->parent;
 
 	vunmap(sb->vaddr);
 
@@ -63,27 +47,27 @@ static void fl2000_free_sb(struct fl2000_stream_buf *sb)
 	for (i = 0; i < sb->nr_pages && sb->pages[i]; i++)
 		__free_page(sb->pages[i]);
 
-	kfree(sb->pages);
+	drmm_kfree(&fl2000_dev->drm, sb->pages);
 
-	kfree(sb);
+	drmm_kfree(&fl2000_dev->drm, sb);
 }
 
-static struct fl2000_stream_buf *fl2000_alloc_sb(struct fl2000_stream* parent, size_t size)
+static struct fl2000_stream_buf *fl2000_alloc_sb(struct fl2000* fl2000_dev, size_t size)
 {
 	int i, ret;
 	struct fl2000_stream_buf *sb;
 	int nr_pages = PAGE_ALIGN(size) >> PAGE_SHIFT;
 
-	sb = kzalloc(sizeof(*sb), GFP_KERNEL);
+	sb = drmm_kzalloc(&fl2000_dev->drm, sizeof(*sb), GFP_KERNEL);
 	if (!sb)
 		return NULL;
 
 	sb->nr_pages = nr_pages;
 	sb->size = size;
 	sb->in_flight = 0;
-	sb->parent = parent;
+	sb->parent = fl2000_dev;
 
-	sb->pages = kcalloc(nr_pages, sizeof(*sb->pages), GFP_KERNEL);
+	sb->pages = drmm_kcalloc(&fl2000_dev->drm, nr_pages, sizeof(*sb->pages), GFP_KERNEL);
 	if (!sb->pages)
 		goto error;
 
@@ -103,7 +87,6 @@ static struct fl2000_stream_buf *fl2000_alloc_sb(struct fl2000_stream* parent, s
 
 	INIT_LIST_HEAD(&sb->list);
 	memset(sb->vaddr, 0, nr_pages << PAGE_SHIFT);
-
 	return sb;
 
 error:
@@ -112,68 +95,73 @@ error:
 	return NULL;
 }
 
-static void fl2000_stream_put_buffers(struct fl2000_stream *stream)
+static void fl2000_stream_put_buffers(struct fl2000 *fl2000_dev)
 {
 	struct fl2000_stream_buf *cur_sb, *temp_sb;
 
-	list_for_each_entry_safe (cur_sb, temp_sb, &stream->render_list, list) {
+	list_for_each_entry_safe (cur_sb, temp_sb, &fl2000_dev->render_list, list) {
+		list_del(&cur_sb->list);
+		fl2000_free_sb(cur_sb);
+	}
+	list_for_each_entry_safe (cur_sb, temp_sb, &fl2000_dev->transmit_list, list) {
+		list_del(&cur_sb->list);
+		fl2000_free_sb(cur_sb);
+	}
+	list_for_each_entry_safe (cur_sb, temp_sb, &fl2000_dev->wait_list, list) {
 		list_del(&cur_sb->list);
 		fl2000_free_sb(cur_sb);
 	}
 }
 
-static int fl2000_stream_get_buffers(struct fl2000_stream *stream, size_t size)
+static int fl2000_stream_get_buffers(struct fl2000 *fl2000_dev, size_t size)
 {
 	int i, ret;
 	struct fl2000_stream_buf *cur_sb;
 
-	BUG_ON(!list_empty(&stream->render_list));
+	BUG_ON(!list_empty(&fl2000_dev->render_list));
 
 	for (i = 0; i < FL2000_SB_NUM; i++) {
-		cur_sb = fl2000_alloc_sb(stream, size);
+		cur_sb = fl2000_alloc_sb(fl2000_dev, size);
 		if (!cur_sb) {
 			ret = -ENOMEM;
 			goto error;
 		}
 
-		list_add(&cur_sb->list, &stream->render_list);
+		list_add(&cur_sb->list, &fl2000_dev->render_list);
 	}
 
 	return 0;
 
 error:
-	fl2000_stream_put_buffers(stream);
+	fl2000_stream_put_buffers(fl2000_dev);
 	return ret;
 }
 
-static void fl2000_stream_release(struct device *dev, void *res)
+void fl2000_stream_release(struct fl2000 *fl2000_dev)
 {
-	struct fl2000_stream *stream = res;
-
-	fl2000_stream_disable(stream);
-	destroy_workqueue(stream->work_queue);
-	dev_info(&stream->usb_dev->dev, "stream release\n");
-	fl2000_stream_put_buffers(stream);
+	fl2000_stream_disable(fl2000_dev);
+	destroy_workqueue(fl2000_dev->stream_work_queue);
+	fl2000_stream_put_buffers(fl2000_dev);
 }
 
 static void fl2000_stream_data_completion(struct urb *urb)
 {
 	struct fl2000_stream_buf *cur_sb = urb->context;
 	struct usb_device *usb_dev = urb->dev;
-	struct fl2000_stream *stream = cur_sb->parent;
+	struct fl2000 *fl2000_dev = cur_sb->parent;
 
-	if (stream) {
-		spin_lock_irq(&stream->list_lock);
+	if (fl2000_dev) {
+		spin_lock_irq(&fl2000_dev->list_lock);
 		cur_sb->in_flight--;
 		/* Move back to render_list if completed */
 		if (!cur_sb->in_flight) {
-			list_move_tail(&cur_sb->list, &stream->render_list);
+			list_move_tail(&cur_sb->list, &fl2000_dev->render_list);
 		}
-		spin_unlock(&stream->list_lock);
-		drm_crtc_handle_vblank(stream->crtc);
+		spin_unlock(&fl2000_dev->list_lock);
+		drm_crtc_handle_vblank(&fl2000_dev->pipe.crtc);
 
 		/* Kick transmit workqueue */
-		up(&stream->work_sem);
+		up(&fl2000_dev->stream_work_sem);
 
 		fl2000_urb_status(usb_dev, urb->status, urb->pipe);
 	}
@@ -185,45 +173,45 @@ static void fl2000_stream_data_completion(struct urb *urb)
 static void fl2000_stream_work(struct work_struct *work)
 {
 	int ret;
-	struct fl2000_stream *stream = container_of(work, struct fl2000_stream, work);
-	struct usb_device *usb_dev = stream->usb_dev;
+	struct fl2000 *fl2000_dev = container_of(work, struct fl2000, stream_work);
+	struct usb_device *usb_dev = fl2000_dev->usb_dev;
 	struct fl2000_stream_buf *cur_sb;
 	struct urb *data_urb;
 
-	while (stream->enabled) {
-		ret = down_interruptible(&stream->work_sem);
+	while (fl2000_dev->enabled) {
+		ret = down_interruptible(&fl2000_dev->stream_work_sem);
 		if (ret) {
 			dev_err(&usb_dev->dev, "Work interrupt error %d", ret);
 			break;
 		}
 
-		spin_lock_irq(&stream->list_lock);
+		spin_lock_irq(&fl2000_dev->list_lock);
 
 		/* If no buffers are available for immediate transmission - then copy latest
 		 * transmission data
 		 */
-		if (list_empty(&stream->transmit_list)) {
-			if (list_empty(&stream->wait_list))
-				cur_sb = list_last_entry(&stream->render_list,
+		if (list_empty(&fl2000_dev->transmit_list)) {
+			if (list_empty(&fl2000_dev->wait_list))
+				cur_sb = list_last_entry(&fl2000_dev->render_list,
 						          struct fl2000_stream_buf, list);
 			else
-				cur_sb = list_last_entry(&stream->wait_list,
+				cur_sb = list_last_entry(&fl2000_dev->wait_list,
 						          struct fl2000_stream_buf, list);
 		} else {
-			cur_sb = list_first_entry(&stream->transmit_list, struct fl2000_stream_buf,
+			cur_sb = list_first_entry(&fl2000_dev->transmit_list, struct fl2000_stream_buf,
 						  list);
 		}
 
 		/* Don't send wrong size buffers */
-		if (cur_sb->size != stream->buf_size) {
-			list_move_tail(&cur_sb->list, &stream->render_list);
-			spin_unlock(&stream->list_lock);
-			up(&stream->work_sem);
+		if (cur_sb->size != fl2000_dev->buf_size) {
+			list_move_tail(&cur_sb->list, &fl2000_dev->render_list);
+			spin_unlock(&fl2000_dev->list_lock);
+			up(&fl2000_dev->stream_work_sem);
 			continue;
 		}
 		cur_sb->in_flight++;
-		list_move_tail(&cur_sb->list, &stream->wait_list);
-		spin_unlock(&stream->list_lock);
+		list_move_tail(&cur_sb->list, &fl2000_dev->wait_list);
+		spin_unlock(&fl2000_dev->list_lock);
 
 		data_urb = usb_alloc_urb(0, GFP_KERNEL);
 		if (!data_urb) {
@@ -234,21 +222,22 @@ static void fl2000_stream_work(struct work_struct *work)
 		/* Endpoint 1 bulk out. We store pointer to current stream buffer structure in
 		 * transfer_buffer field of URB which is unused due to SGT
 		 */
+		//size_t buf_size = (stream->buf_size - 50*1024) & ~(size_t)7;
 		usb_fill_bulk_urb(data_urb, usb_dev, usb_sndbulkpipe(usb_dev, 1), NULL,
-				  stream->buf_size, fl2000_stream_data_completion, cur_sb);
+				  fl2000_dev->buf_size, fl2000_stream_data_completion, cur_sb);
 		data_urb->interval = 0;
 		data_urb->sg = cur_sb->sgt.sgl;
 		data_urb->num_sgs = cur_sb->sgt.nents;
 		data_urb->transfer_flags |= URB_ZERO_PACKET;
 
-		usb_anchor_urb(data_urb, &stream->anchor);
+		usb_anchor_urb(data_urb, &fl2000_dev->anchor);
 		ret = fl2000_submit_urb(data_urb);
 		if (ret) {
 			dev_err(&usb_dev->dev, "Data URB error %d", ret);
 			usb_unanchor_urb(data_urb);
 			usb_free_urb(data_urb);
 			dev_info(&usb_dev->dev, "USB free urb");
-			stream->enabled = false;
+			fl2000_dev->enabled = false;
 			dev_info(&usb_dev->dev, "Stream false");
 		}
 	}
@@ -277,7 +266,18 @@ static void fl2000_xrgb888_to_rgb565_line(u16 *dbuf, u32 *sbuf, u32 pixels)
 	}
 }
 
-void fl2000_stream_compress(struct fl2000_stream *stream, void *src, unsigned int height,
+static void fl2000_xrgb888_to_rgb332_line(u8 *dbuf, u32 *sbuf, u32 pixels)
+{
+	unsigned int x;
+
+	for (x = 0; x < pixels; x++) {
+		u8 val332 = ((sbuf[x] & 0x00e00000) >> 16) | ((sbuf[x] & 0x0000e000) >> 11) |
+			     ((sbuf[x] & 0x000000c0) >> 6);
+		dbuf[x ^ 4] = val332;
+	}
+}
+
+void fl2000_stream_compress(struct fl2000 *fl2000_dev, void *src, unsigned int height,
 			    unsigned int width, unsigned int pitch)
 {
 	struct fl2000_stream_buf *cur_sb;
@@ -287,27 +287,30 @@ void fl2000_stream_compress(struct fl2000_stream *stream, void *src, unsigned in
 	
 	//BUG_ON(list_empty(&stream->render_list));
 
-	spin_lock_irq(&stream->list_lock);
+	spin_lock_irq(&fl2000_dev->list_lock);
 
 	/* Drop frames if sending frames too fast */
-	if (list_empty(&stream->render_list))
+	if (list_empty(&fl2000_dev->render_list))
 		goto list_empty;
 
-	cur_sb = list_first_entry(&stream->render_list, struct fl2000_stream_buf, list);
+	cur_sb = list_first_entry(&fl2000_dev->render_list, struct fl2000_stream_buf, list);
 
 	/* Reallocate buffers which are the wrong size */
-	if (cur_sb->size != stream->buf_size) {
+	if (cur_sb->size != fl2000_dev->buf_size) {
 		list_del(&cur_sb->list);
 		fl2000_free_sb(cur_sb);
 
-		cur_sb = fl2000_alloc_sb(stream, stream->buf_size);
-		list_add(&cur_sb->list, &stream->render_list);
+		cur_sb = fl2000_alloc_sb(fl2000_dev, fl2000_dev->buf_size);
+		list_add(&cur_sb->list, &fl2000_dev->render_list);
 	}
 	dst = cur_sb->vaddr;
-	dst_line_len = width * stream->bytes_pix;
+	dst_line_len = width * fl2000_dev->bytes_pix;
 	
 	for (y = 0; y < height; y++) {
-		switch (stream->bytes_pix) {
+		switch (fl2000_dev->bytes_pix) {
+		case 1:
+			fl2000_xrgb888_to_rgb332_line(dst, src, width);
+			break;
 		case 2:
 			fl2000_xrgb888_to_rgb565_line(dst, src, width);
 			break;
@@ -320,72 +323,71 @@ void fl2000_stream_compress(struct fl2000_stream *stream, void *src, unsigned in
 		src += pitch;
 		dst += dst_line_len;
 	}
-
-	list_move_tail(&cur_sb->list, &stream->transmit_list);
+	list_move_tail(&cur_sb->list, &fl2000_dev->transmit_list);
 
 list_empty:
-	spin_unlock(&stream->list_lock);
+	spin_unlock(&fl2000_dev->list_lock);
 }
 
-int fl2000_stream_mode_set(struct fl2000_stream *stream, int pixels, u32 bytes_pix)
+int fl2000_stream_mode_set(struct fl2000 *fl2000_dev, int pixels, u32 bytes_pix)
 {
 	size_t size;
 
 	/* Round buffer size up to multiple of 8 to meet HW expectations */
 	size = (pixels * bytes_pix + 7) & ~(size_t)7;
 
-	stream->bytes_pix = bytes_pix;
+	fl2000_dev->bytes_pix = bytes_pix;
 
-	spin_lock_irq(&stream->list_lock);
+	spin_lock_irq(&fl2000_dev->list_lock);
 	/* Queue buffers */
-	if (list_empty(&stream->render_list) && list_empty(&stream->wait_list) && list_empty(&stream->transmit_list)) {
-		fl2000_stream_get_buffers(stream, size);
+	if (list_empty(&fl2000_dev->render_list) && list_empty(&fl2000_dev->wait_list) && list_empty(&fl2000_dev->transmit_list)) {
+		fl2000_stream_get_buffers(fl2000_dev, size);
 	}
-	stream->buf_size = size;
-	spin_unlock_irq(&stream->list_lock);
+	fl2000_dev->buf_size = size;
+	spin_unlock_irq(&fl2000_dev->list_lock);
 
 	return 0;
 }
 
-int fl2000_stream_enable(struct fl2000_stream *stream)
+int fl2000_stream_enable(struct fl2000 *fl2000_dev)
 {
 	int i;
 
-	BUG_ON(list_empty(&stream->transmit_list));
+	BUG_ON(list_empty(&fl2000_dev->transmit_list));
 
-	sema_init(&stream->work_sem, 0);
-	stream->enabled = true;
-	queue_work(stream->work_queue, &stream->work);
+	sema_init(&fl2000_dev->stream_work_sem, 0);
+	fl2000_dev->enabled = true;
+	queue_work(fl2000_dev->stream_work_queue, &fl2000_dev->stream_work);
 
 	/* Kick transmit workqueue with minimum buffers submitted */
 	for (i = 0; i < FL2000_SB_MIN; i++)
-		up(&stream->work_sem);
+		up(&fl2000_dev->stream_work_sem);
 
 	return 0;
 }
 
-void fl2000_stream_disable(struct fl2000_stream *stream)
+void fl2000_stream_disable(struct fl2000 *fl2000_dev)
 {
 	struct fl2000_stream_buf *cur_sb;
 
-	stream->enabled = false;
+	fl2000_dev->enabled = false;
 
-	cancel_work_sync(&stream->work);
-	drain_workqueue(stream->work_queue);
+	cancel_work_sync(&fl2000_dev->stream_work);
+	drain_workqueue(fl2000_dev->stream_work_queue);
 
-	if (!usb_wait_anchor_empty_timeout(&stream->anchor, 1000))
-		usb_kill_anchored_urbs(&stream->anchor);
+	if (!usb_wait_anchor_empty_timeout(&fl2000_dev->anchor, 1000))
+		usb_kill_anchored_urbs(&fl2000_dev->anchor);
 
-	spin_lock_irq(&stream->list_lock);
-	while (!list_empty(&stream->transmit_list)) {
-		cur_sb = list_first_entry(&stream->transmit_list, struct fl2000_stream_buf, list);
-		list_move_tail(&cur_sb->list, &stream->render_list);
+	spin_lock_irq(&fl2000_dev->list_lock);
+	while (!list_empty(&fl2000_dev->transmit_list)) {
+		cur_sb = list_first_entry(&fl2000_dev->transmit_list, struct fl2000_stream_buf, list);
+		list_move_tail(&cur_sb->list, &fl2000_dev->render_list);
 	}
-	while (!list_empty(&stream->wait_list)) {
-		cur_sb = list_first_entry(&stream->wait_list, struct fl2000_stream_buf, list);
-		list_move_tail(&cur_sb->list, &stream->render_list);
+	while (!list_empty(&fl2000_dev->wait_list)) {
+		cur_sb = list_first_entry(&fl2000_dev->wait_list, struct fl2000_stream_buf, list);
+		list_move_tail(&cur_sb->list, &fl2000_dev->render_list);
 	}
-	spin_unlock(&stream->list_lock);
+	spin_unlock(&fl2000_dev->list_lock);
 }
 
 /**
@@ -399,46 +401,31 @@ void fl2000_stream_disable(struct fl2000_stream *stream)
  *
  * Return: Operation result
  */
-struct fl2000_stream *fl2000_stream_create(struct usb_device *usb_dev, struct drm_crtc *crtc)
+int fl2000_stream_create(struct fl2000 *fl2000_dev)
 {
 	int ret;
-	struct fl2000_stream *stream;
+	struct usb_device *usb_dev = fl2000_dev->usb_dev;
 
-	/* Altsettung 1 on interface 0 */
+	/* Altsetting 1 on interface 0 */
 	ret = usb_set_interface(usb_dev, FL2000_USBIF_AVCONTROL, 1);
 	if (ret) {
 		dev_err(&usb_dev->dev, "Cannot set streaming interface for bulk transfers");
-		return ERR_PTR(ret);
+		return ret;
 	}
 
-	stream = devres_alloc(&fl2000_stream_release, sizeof(*stream), GFP_KERNEL);
-	if (!stream) {
-		dev_err(&usb_dev->dev, "Cannot allocate stream");
-		return ERR_PTR(-ENOMEM);
-	}
-	devres_add(&usb_dev->dev, stream);
+	INIT_WORK(&fl2000_dev->stream_work, &fl2000_stream_work);
+	INIT_LIST_HEAD(&fl2000_dev->render_list);
+	INIT_LIST_HEAD(&fl2000_dev->transmit_list);
+	INIT_LIST_HEAD(&fl2000_dev->wait_list);
+	spin_lock_init(&fl2000_dev->list_lock);
+	init_usb_anchor(&fl2000_dev->anchor);
+	sema_init(&fl2000_dev->stream_work_sem, 0);
 
-	INIT_WORK(&stream->work, &fl2000_stream_work);
-	INIT_LIST_HEAD(&stream->render_list);
-	INIT_LIST_HEAD(&stream->transmit_list);
-	INIT_LIST_HEAD(&stream->wait_list);
-	spin_lock_init(&stream->list_lock);
-	init_usb_anchor(&stream->anchor);
-	sema_init(&stream->work_sem, 0);
-	stream->usb_dev = usb_dev;
-	stream->crtc = crtc;
-
-	stream->work_queue = create_workqueue("fl2000_stream");
-	if (!stream->work_queue) {
+	fl2000_dev->stream_work_queue = create_workqueue("fl2000_stream");
+	if (!fl2000_dev->stream_work_queue) {
 		dev_err(&usb_dev->dev, "Allocate streaming workqueue failed");
-		devres_release(&usb_dev->dev, fl2000_stream_release, NULL, NULL);
-		return ERR_PTR(-ENOMEM);
+		fl2000_stream_release(fl2000_dev);
+		return -ENOMEM;
 	}
-
-	return stream;
-}
-
-void fl2000_stream_destroy(struct usb_device *usb_dev)
-{
-	devres_release(&usb_dev->dev, fl2000_stream_release, NULL, NULL);
+	return 0;
 }

@@ -20,7 +20,6 @@ fl2000_read_edid(void *data, u8 *buf, unsigned int block, size_t len)
 }
 static int fl2000_get_modes(struct drm_connector *connector)
 {
-    //struct fl2000_drm_if* drm_if = container_of(connector, struct fl2000_drm_if, connector);
 	struct edid *edid;
     int ret;
 
@@ -43,14 +42,13 @@ static enum drm_mode_status fl2000_connector_mode_valid(struct drm_connector *co
 static enum drm_connector_status
 fl2000_detect(struct drm_connector *connector, bool force)
 {
-    struct fl2000_drm_if* drm_if = container_of(connector, struct fl2000_drm_if, connector);
-	struct regmap *regmap = dev_get_regmap(&drm_if->usb_dev->dev, NULL);
+    struct fl2000* fl2000_dev = container_of(connector, struct fl2000, connector);
+	struct regmap *regmap = dev_get_regmap(&fl2000_dev->usb_dev->dev, NULL);
 	union fl2000_vga_status_reg status;
 	int ret;
 
 	ret = regmap_read(regmap, FL2000_VGA_STATUS_REG, &status.val);
 
-	dev_info(&drm_if->usb_dev->dev, "statuses %d %d %d", status.vga_status, status.monitor_status, status.edid_status);
 	return status.monitor_status ? connector_status_connected : connector_status_disconnected;
 }
 
@@ -73,14 +71,13 @@ static const struct drm_connector_funcs fl2000_connector_funcs = {
 	.atomic_destroy_state   = drm_atomic_helper_connector_destroy_state,
 };
 
-int fl2000_connector_init(struct fl2000_drm_if *drm_if)
+int fl2000_connector_init(struct fl2000 *fl2000_dev)
 {
     int ret;
-	struct drm_connector* connector = &drm_if->connector;
-	struct fl2000_devs *devs = dev_get_drvdata(&drm_if->usb_dev->dev);
+	struct drm_connector* connector = &fl2000_dev->connector;
 
-	ret = drm_connector_init_with_ddc(&drm_if->drm, connector, &fl2000_connector_funcs,
-			   DRM_MODE_CONNECTOR_VGA, devs->adapter);
+	ret = drm_connector_init_with_ddc(&fl2000_dev->drm, connector, &fl2000_connector_funcs,
+			   DRM_MODE_CONNECTOR_VGA, fl2000_dev->adapter);
     if (ret)
         return ret;
     

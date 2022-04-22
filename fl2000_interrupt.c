@@ -8,48 +8,32 @@
 
 #define INTR_BUFSIZE 1
 
-struct fl2000_intr {
-	struct usb_device *usb_dev;
-	struct drm_device *drm;
-	u8 poll_interval;
-	struct urb *urb;
-	u8 *buf;
-	dma_addr_t transfer_dma;
-	struct work_struct work;
-	struct workqueue_struct *work_queue;
-};
-
 static void fl2000_intr_work(struct work_struct *work)
 {
 	int event;
-	struct fl2000_intr *intr = container_of(work, struct fl2000_intr, work);
+	struct fl2000 *fl2000_dev = container_of(work, struct fl2000, intr_work);
 
-	dev_info(&intr->usb_dev->dev, "intr work");
-	event = fl2000_check_interrupt(intr->usb_dev);
+	event = fl2000_check_interrupt(fl2000_dev->usb_dev);
 	if (event) {
-		drm_kms_helper_hotplug_event(intr->drm);
-		//drm_helper_hpd_irq_event(intr->drm);
+		drm_kms_helper_hotplug_event(&fl2000_dev->drm);
+		//drm_helper_hpd_irq_event(fl2000_dev->drm);
 	}
 }
 
-static void fl2000_intr_release(struct device *dev, void *res)
+void fl2000_intr_release(struct fl2000 *fl2000_dev)
 {
-	struct fl2000_intr *intr = res;
-	struct usb_device *usb_dev = to_usb_device(dev);
-
-	usb_poison_urb(intr->urb);
-	cancel_work_sync(&intr->work);
-	destroy_workqueue(intr->work_queue);
-	usb_free_coherent(usb_dev, INTR_BUFSIZE, intr->buf, intr->transfer_dma);
-	usb_free_urb(intr->urb);
-	dev_info(&usb_dev->dev, "intr release\n");
+	usb_poison_urb(fl2000_dev->intr_urb);
+	cancel_work_sync(&fl2000_dev->intr_work);
+	destroy_workqueue(fl2000_dev->intr_work_queue);
+	usb_free_coherent(fl2000_dev->usb_dev, INTR_BUFSIZE, fl2000_dev->intr_buf, fl2000_dev->transfer_dma);
+	usb_free_urb(fl2000_dev->intr_urb);
 }
 
 static void fl2000_intr_completion(struct urb *urb)
 {
 	int ret;
 	struct usb_device *usb_dev = urb->dev;
-	struct fl2000_intr *intr = urb->context;
+	struct fl2000 *fl2000_dev = urb->context;
 
 	ret = fl2000_urb_status(usb_dev, urb->status, urb->pipe);
 	if (ret) {
@@ -58,12 +42,12 @@ static void fl2000_intr_completion(struct urb *urb)
 	}
 
 	/* This possibly involves reading I2C registers, etc. so better to schedule a work queue */
-	queue_work(intr->work_queue, &intr->work);
+	queue_work(fl2000_dev->intr_work_queue, &fl2000_dev->intr_work);
 
 	/* For interrupt URBs, as part of successful URB submission urb->interval is modified to
 	 * reflect the actual transfer period used, so we need to restore it
 	 */
-	urb->interval = intr->poll_interval;
+	urb->interval = fl2000_dev->poll_interval;
 	urb->start_frame = -1;
 
 	/* Restart urb */
@@ -84,12 +68,12 @@ static void fl2000_intr_completion(struct urb *urb)
  *
  * Return: Operation result
  */
-struct fl2000_intr *fl2000_intr_create(struct usb_device *usb_dev, struct drm_device *drm)
+int fl2000_intr_create(struct fl2000 *fl2000_dev)
 {
 	int ret;
-	struct fl2000_intr *intr;
+	struct usb_device *usb_dev = fl2000_dev->usb_dev;
 	struct usb_endpoint_descriptor *desc;
-	struct usb_interface *interface = usb_ifnum_to_if(usb_dev, FL2000_USBIF_INTERRUPT);
+	struct usb_interface *interface = fl2000_dev->intf[FL2000_USBIF_INTERRUPT];
 
 	/* There's only one altsetting (#0) and one endpoint (#3) in the interrupt interface (#2)
 	 * but lets try and "find" it anyway
@@ -97,60 +81,46 @@ struct fl2000_intr *fl2000_intr_create(struct usb_device *usb_dev, struct drm_de
 	ret = usb_find_int_in_endpoint(interface->cur_altsetting, &desc);
 	if (ret) {
 		dev_err(&usb_dev->dev, "Cannot find interrupt endpoint");
-		return ERR_PTR(ret);
+		return ret;
 	}
 
-	intr = devres_alloc(&fl2000_intr_release, sizeof(*intr), GFP_KERNEL);
-	if (!intr) {
-		dev_err(&usb_dev->dev, "Cannot allocate interrupt private structure");
-		return ERR_PTR(-ENOMEM);
-	}
-	devres_add(&usb_dev->dev, intr);
+	fl2000_dev->poll_interval = desc->bInterval;
+	INIT_WORK(&fl2000_dev->intr_work, &fl2000_intr_work);
 
-	intr->poll_interval = desc->bInterval;
-	intr->usb_dev = usb_dev;
-	intr->drm = drm;
-	INIT_WORK(&intr->work, &fl2000_intr_work);
-
-	intr->urb = usb_alloc_urb(0, GFP_ATOMIC);
-	if (!intr->urb) {
+	fl2000_dev->intr_urb = usb_alloc_urb(0, GFP_ATOMIC);
+	if (!fl2000_dev->intr_urb) {
 		dev_err(&usb_dev->dev, "Allocate interrupt URB failed");
-		devres_release(&usb_dev->dev, fl2000_intr_release, NULL, NULL);
-		return ERR_PTR(-ENOMEM);
+		fl2000_intr_release(fl2000_dev);
+		return -ENOMEM;
 	}
 
-	intr->buf = usb_alloc_coherent(usb_dev, INTR_BUFSIZE, GFP_KERNEL, &intr->transfer_dma);
-	if (!intr->buf) {
+	fl2000_dev->intr_buf = usb_alloc_coherent(usb_dev, INTR_BUFSIZE, GFP_KERNEL, &fl2000_dev->transfer_dma);
+	if (!fl2000_dev->intr_buf) {
 		dev_err(&usb_dev->dev, "Cannot allocate interrupt data");
-		devres_release(&usb_dev->dev, fl2000_intr_release, NULL, NULL);
-		return ERR_PTR(-ENOMEM);
+		fl2000_intr_release(fl2000_dev);
+		return -ENOMEM;
 	}
 
-	intr->work_queue = create_workqueue("fl2000_interrupt");
-	if (!intr->work_queue) {
+	fl2000_dev->intr_work_queue = create_workqueue("fl2000_interrupt");
+	if (!fl2000_dev->intr_work_queue) {
 		dev_err(&usb_dev->dev, "Create interrupt workqueue failed");
-		devres_release(&usb_dev->dev, fl2000_intr_release, NULL, NULL);
-		return ERR_PTR(-ENOMEM);
+		fl2000_intr_release(fl2000_dev);
+		return -ENOMEM;
 	}
 
 	/* Interrupt URB configuration is static, including allocated buffer */
-	usb_fill_int_urb(intr->urb, usb_dev, usb_rcvintpipe(usb_dev, 3),
-			 intr->buf, INTR_BUFSIZE, fl2000_intr_completion, intr, intr->poll_interval);
-	intr->urb->transfer_dma = intr->transfer_dma;
-	intr->urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP; /* use urb->transfer_dma */
+	usb_fill_int_urb(fl2000_dev->intr_urb, usb_dev, usb_rcvintpipe(usb_dev, 3),
+			 fl2000_dev->intr_buf, INTR_BUFSIZE, fl2000_intr_completion, fl2000_dev, fl2000_dev->poll_interval);
+	fl2000_dev->intr_urb->transfer_dma = fl2000_dev->transfer_dma;
+	fl2000_dev->intr_urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP; /* use urb->transfer_dma */
 
 	/* Start checking for interrupts */
-	ret = usb_submit_urb(intr->urb, GFP_KERNEL);
+	ret = usb_submit_urb(fl2000_dev->intr_urb, GFP_KERNEL);
 	if (ret) {
 		dev_err(&usb_dev->dev, "URB submission failed");
-		devres_release(&usb_dev->dev, fl2000_intr_release, NULL, NULL);
-		return ERR_PTR(ret);
+		fl2000_intr_release(fl2000_dev);
+		return ret;
 	}
 
-	return intr;
-}
-
-void fl2000_intr_destroy(struct usb_device *usb_dev)
-{
-	devres_release(&usb_dev->dev, fl2000_intr_release, NULL, NULL);
+	return 0;
 }
