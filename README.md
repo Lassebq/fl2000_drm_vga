@@ -10,7 +10,7 @@ make
 ```
 Use
 ```
-insmod fl2000.ko && insmod it66121.ko
+insmod fl2000.ko
 ```
 with sudo or in root shell to start the driver. If you are running on a system with secure boot enabled, you may need to sign kernel modules. Try using provided script for this:
 ```
