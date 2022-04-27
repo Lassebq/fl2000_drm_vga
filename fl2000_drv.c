@@ -36,8 +36,7 @@ static int fl2000_probe(struct usb_interface *interface,
 	}
 
 	if (usb_dev->speed == USB_SPEED_HIGH) {
-		dev_err(&usb_dev->dev, "Using USB 2.0");
-		return -ENODEV;
+		dev_err(&usb_dev->dev, "Using USB 2.0, resolutions may be limited");
 	}
 
 	fl2000_dev = devm_drm_dev_alloc(&usb_dev->dev, &fl2000_drm_driver,

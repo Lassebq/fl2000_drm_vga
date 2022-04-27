@@ -82,6 +82,7 @@ static inline int fl2000_submit_urb(struct urb *urb)
 				cond_resched();
 				ret = -EAGAIN;
 			}
+			printk("usb submit again\n");
 			break;
 		default:
 			break;
@@ -154,7 +155,7 @@ struct fl2000 {
 
 	struct work_struct stream_work;
 	struct workqueue_struct *stream_work_queue;
-	struct semaphore stream_work_sem;
+	struct completion stream_complete;
 	bool enabled;
 
 	struct usb_anchor anchor;

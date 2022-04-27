@@ -350,7 +350,7 @@ static void fl2000_display_enable(struct drm_simple_display_pipe *pipe,
 
 	fl2000_stream_enable(fl2000_dev);
 
-	drm_crtc_vblank_on(crtc);
+	//drm_crtc_vblank_on(crtc);
 }
 
 static void fl2000_display_disable(struct drm_simple_display_pipe *pipe)
@@ -359,9 +359,9 @@ static void fl2000_display_disable(struct drm_simple_display_pipe *pipe)
 	struct drm_device *drm = pipe->crtc.dev;
 	struct fl2000 *fl2000_dev = drm->dev_private;
 
-	fl2000_stream_disable(fl2000_dev);
+	//drm_crtc_vblank_off(crtc);
 
-	drm_crtc_vblank_off(crtc);
+	fl2000_stream_disable(fl2000_dev);
 }
 
 static int fl2000_display_check(struct drm_simple_display_pipe *pipe,
@@ -412,7 +412,6 @@ static void fl2000_display_update(struct drm_simple_display_pipe *pipe,
 {
 	struct drm_crtc *crtc = &pipe->crtc;
 	struct drm_device *drm = crtc->dev;
-	struct drm_pending_vblank_event *event = crtc->state->event;
 	struct drm_plane_state *state = pipe->plane.state;
 	struct drm_shadow_plane_state *shadow_plane_state =
 		to_drm_shadow_plane_state(state);
@@ -420,17 +419,6 @@ static void fl2000_display_update(struct drm_simple_display_pipe *pipe,
 
 	if (drm_atomic_helper_damage_merged(old_state, state, &rect))
 		fb2000_dirty(state->fb, &shadow_plane_state->map[0], &rect);
-
-	if (event) {
-		crtc->state->event = NULL;
-
-		spin_lock_irq(&drm->event_lock);
-		if (crtc->state->active && drm_crtc_vblank_get(crtc) == 0)
-			drm_crtc_arm_vblank_event(crtc, event);
-		else
-			drm_crtc_send_vblank_event(crtc, event);
-		spin_unlock_irq(&drm->event_lock);
-	}
 }
 
 /* Logical pipe management (no HW configuration here) */
@@ -529,12 +517,12 @@ int fl2000_drm_init(struct fl2000 *fl2000_dev)
 
 	drm_mode_config_reset(drm);
 
-	ret = drm_vblank_init(drm, drm->mode_config.num_crtc);
+	/*ret = drm_vblank_init(drm, drm->mode_config.num_crtc);
 	if (ret) {
 		dev_err(drm->dev, "Failed to initialize %d VBLANK(s) (%d)",
 			drm->mode_config.num_crtc, ret);
 		goto err_intr_release;
-	}
+	}*/
 
 	drm_kms_helper_poll_init(drm);
 

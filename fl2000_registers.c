@@ -354,6 +354,7 @@ int fl2000_check_interrupt(struct usb_device *usb_dev)
 		/* TODO: Don't know how to recover here */
 		dev_info(&usb_dev->dev, "vga frame drop");
 	}
+	dev_info(&usb_dev->dev, "interrupt");
 
 	return sink_event;
 }
