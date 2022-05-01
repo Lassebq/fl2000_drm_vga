@@ -1,3 +1,9 @@
+
+#include <drm/drm_atomic_state_helper.h>
+#include <drm/drm_connector.h>
+#include <drm/drm_modeset_helper_vtables.h>
+#include <drm/drm_probe_helper.h>
+
 #include "fl2000.h"
 
 static int fl2000_read_edid(void *data, u8 *buf, unsigned int block, size_t len)

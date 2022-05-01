@@ -4,6 +4,8 @@
  * (C) Copyright 2018-2020, Artem Mygaiev
  */
 
+#include <drm/drm_probe_helper.h>
+
 #include "fl2000.h"
 
 #define INTR_BUFSIZE 1

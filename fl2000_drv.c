@@ -4,6 +4,14 @@
  * (C) Copyright 2018-2020, Artem Mygaiev
  */
 
+#include <drm/drm_drv.h>
+
+#include <linux/module.h>
+#include <linux/usb.h>
+
+#include <drm/drm_managed.h>
+#include <drm/drm_modeset_helper.h>
+
 #include "fl2000.h"
 
 #define USB_DRIVER_NAME "fl2000_usb"

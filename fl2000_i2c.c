@@ -3,7 +3,6 @@
  * (C) Copyright 2017, Fresco Logic, Incorporated.
  * (C) Copyright 2018-2019, Artem Mygaiev
  */
-
 #include "fl2000.h"
 
 /* I2C controller require mandatory 8-bit (1 bite) sub-address provided for any read/write

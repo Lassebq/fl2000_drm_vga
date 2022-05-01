@@ -3,6 +3,7 @@
  * (C) Copyright 2017, Fresco Logic, Incorporated.
  * (C) Copyright 2018-2019, Artem Mygaiev
  */
+#include <linux/regmap.h>
 
 #include "fl2000.h"
 
@@ -117,7 +118,6 @@ int fl2000_set_pll(struct usb_device *usb_dev, struct fl2000_pll *pll)
 	pll_reg.function = pll->function;
 	regmap_write(regmap, FL2000_VGA_PLL_REG, pll_reg.val);
 
-	dev_info(&usb_dev->dev, "pll reg %x", pll_reg.val);
 	aclk.force_pll_up = true;
 	fl2000_add_bitmask(mask, union fl2000_vga_ctrl_reg_aclk, force_pll_up);
 	//aclk.force_vga_connect = true;
@@ -165,7 +165,7 @@ int fl2000_set_pixfmt(struct usb_device *usb_dev, u32 bytes_pix)
 	pxclk.dac_output_en = false;
 	fl2000_add_bitmask(mask, union fl2000_vga_cntrl_reg_pxclk,
 			   dac_output_en);
-	regmap_write_bits(regmap, FL2000_VGA_CTRL_REG_PXCLK, mask, pxclk.val);
+	//regmap_write_bits(regmap, FL2000_VGA_CTRL_REG_PXCLK, mask, pxclk.val);
 	pxclk.drop_cnt = false;
 	fl2000_add_bitmask(mask, union fl2000_vga_cntrl_reg_pxclk, drop_cnt);
 	pxclk.vga565_mode = (bytes_pix == 2);

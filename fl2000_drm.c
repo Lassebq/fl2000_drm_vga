@@ -4,8 +4,22 @@
  * (C) Copyright 2018-2020, Artem Mygaiev
  */
 
-#include "fl2000.h"
+#include <linux/dma-buf.h>
+#include <linux/printk.h>
+#include <linux/usb.h>
+
+#include <drm/drm_atomic_helper.h>
+#include <drm/drm_damage_helper.h>
+#include <drm/drm_drv.h>
+#include <drm/drm_fb_helper.h>
+#include <drm/drm_fourcc.h>
 #include <drm/drm_gem_atomic_helper.h>
+#include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_gem_shmem_helper.h>
+#include <drm/drm_probe_helper.h>
+#include <drm/drm_vblank.h>
+
+#include "fl2000.h"
 
 #define DRM_DRIVER_NAME "fl2000_drm"
 #define DRM_DRIVER_DESC "USB-VGA/HDMI"
@@ -16,8 +30,8 @@
 #define DRM_DRIVER_PATCHLEVEL 1
 
 /* Maximum supported resolution, out-of-the-blue numbers */
-#define FL20000_MAX_WIDTH 4000
-#define FL20000_MAX_HEIGHT 4000
+#define FL2000_MAX_WIDTH 4000
+#define FL2000_MAX_HEIGHT 4000
 
 /* Force using 32-bit XRGB8888 on input for simplicity */
 #define FL2000_FB_BPP 32
@@ -350,7 +364,7 @@ static void fl2000_display_enable(struct drm_simple_display_pipe *pipe,
 
 	fl2000_stream_enable(fl2000_dev);
 
-	//drm_crtc_vblank_on(crtc);
+	drm_crtc_vblank_on(crtc);
 }
 
 static void fl2000_display_disable(struct drm_simple_display_pipe *pipe)
@@ -359,7 +373,7 @@ static void fl2000_display_disable(struct drm_simple_display_pipe *pipe)
 	struct drm_device *drm = pipe->crtc.dev;
 	struct fl2000 *fl2000_dev = drm->dev_private;
 
-	//drm_crtc_vblank_off(crtc);
+	drm_crtc_vblank_off(crtc);
 
 	fl2000_stream_disable(fl2000_dev);
 }
@@ -390,11 +404,6 @@ static void fb2000_dirty(struct drm_framebuffer *fb,
 	struct drm_device *drm = fb->dev;
 	struct fl2000 *fl2000_dev = drm->dev_private;
 
-	if (!drm_dev_enter(fb->dev, &idx)) {
-		dev_err(drm->dev, "DRM enter failed!");
-		return;
-	}
-
 	ret = drm_gem_fb_begin_cpu_access(fb, DMA_FROM_DEVICE);
 	if (ret)
 		return;
@@ -403,8 +412,6 @@ static void fb2000_dirty(struct drm_framebuffer *fb,
 			       fb->pitches[0]);
 
 	drm_gem_fb_end_cpu_access(fb, DMA_FROM_DEVICE);
-
-	drm_dev_exit(idx);
 }
 
 static void fl2000_display_update(struct drm_simple_display_pipe *pipe,
@@ -416,9 +423,29 @@ static void fl2000_display_update(struct drm_simple_display_pipe *pipe,
 	struct drm_shadow_plane_state *shadow_plane_state =
 		to_drm_shadow_plane_state(state);
 	struct drm_rect rect;
+   	struct drm_pending_vblank_event *event = crtc->state->event;
+	int idx;
+
+	if (!drm_dev_enter(drm, &idx)) {
+		dev_err(drm->dev, "DRM enter failed!");
+		return;
+	}
 
 	if (drm_atomic_helper_damage_merged(old_state, state, &rect))
-		fb2000_dirty(state->fb, &shadow_plane_state->map[0], &rect);
+		fb2000_dirty(state->fb, &shadow_plane_state->data[0], &rect);
+
+	drm_dev_exit(idx);
+
+	if (event) {
+			crtc->state->event = NULL;
+
+			spin_lock_irq(&drm->event_lock);
+			if (crtc->state->active && drm_crtc_vblank_get(crtc) == 0)
+					drm_crtc_arm_vblank_event(crtc, event);
+			else
+					drm_crtc_send_vblank_event(crtc, event);
+			spin_unlock_irq(&drm->event_lock);
+	}
 }
 
 /* Logical pipe management (no HW configuration here) */
@@ -472,9 +499,9 @@ int fl2000_drm_init(struct fl2000 *fl2000_dev)
 	mode_config = &drm->mode_config;
 	mode_config->funcs = &fl2000_mode_config_funcs;
 	mode_config->min_width = 1;
-	mode_config->max_width = FL20000_MAX_WIDTH;
+	mode_config->max_width = FL2000_MAX_WIDTH;
 	mode_config->min_height = 1;
-	mode_config->max_height = FL20000_MAX_HEIGHT;
+	mode_config->max_height = FL2000_MAX_HEIGHT;
 	mode_config->prefer_shadow = 0;
 	mode_config->preferred_depth = FL2000_FB_BPP;
 
@@ -517,12 +544,12 @@ int fl2000_drm_init(struct fl2000 *fl2000_dev)
 
 	drm_mode_config_reset(drm);
 
-	/*ret = drm_vblank_init(drm, drm->mode_config.num_crtc);
+	ret = drm_vblank_init(drm, drm->mode_config.num_crtc);
 	if (ret) {
 		dev_err(drm->dev, "Failed to initialize %d VBLANK(s) (%d)",
 			drm->mode_config.num_crtc, ret);
 		goto err_intr_release;
-	}*/
+	}
 
 	drm_kms_helper_poll_init(drm);
 
@@ -554,10 +581,12 @@ void fl2000_drm_release(struct fl2000 *fl2000_dev)
 {
 	struct drm_device *drm = &fl2000_dev->drm;
 
-	/* Start streaming interface */
+	drm_crtc_vblank_off(&fl2000_dev->pipe.crtc);
+
+	/* Stop streaming interface */
 	fl2000_stream_release(fl2000_dev);
 
-	/* Start interrupts interface */
+	/* Stop interrupts interface */
 	fl2000_intr_release(fl2000_dev);
 
 	/* Prepare to DRM device shutdown */

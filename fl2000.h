@@ -7,37 +7,12 @@
 #ifndef __FL2000_DRM_H__
 #define __FL2000_DRM_H__
 
-#include <linux/version.h>
-#include <linux/module.h>
-#include <linux/types.h>
-#include <linux/slab.h>
-#include <linux/kernel.h>
-#include <linux/printk.h>
-#include <linux/init.h>
-#include <linux/usb.h>
-#include <linux/i2c.h>
-#include <linux/component.h>
 #include <linux/regmap.h>
-#include <linux/vmalloc.h>
-#include <linux/dma-buf.h>
-#include <linux/dma-mapping.h>
-#include <linux/time.h>
-#include <linux/device.h>
-#include <drm/drm_gem.h>
-#include <drm/drm_prime.h>
-#include <drm/drm_vblank.h>
-#include <drm/drm_ioctl.h>
-#include <drm/drm_drv.h>
-#include <drm/drm_fourcc.h>
-#include <drm/drm_fb_helper.h>
-#include <drm/drm_gem_framebuffer_helper.h>
-#include <drm/drm_gem_shmem_helper.h>
-#include <drm/drm_atomic_helper.h>
+#include <linux/types.h>
+#include <linux/usb.h>
+
+#include <drm/drm_modes.h>
 #include <drm/drm_simple_kms_helper.h>
-#include <drm/drm_crtc_helper.h>
-#include <drm/drm_probe_helper.h>
-#include <drm/drm_damage_helper.h>
-#include <drm/drm_managed.h>
 
 #include "fl2000_registers.h"
 
@@ -160,6 +135,8 @@ struct fl2000 {
 
 	struct usb_anchor anchor;
 
+	int print_complete;
+	
 	/* Interrupt handling */
 	u8 poll_interval;
 	struct urb *intr_urb;
