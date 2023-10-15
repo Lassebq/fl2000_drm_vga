@@ -7,6 +7,7 @@
 #ifndef __FL2000_DRM_H__
 #define __FL2000_DRM_H__
 
+#include <linux/i2c.h>
 #include <linux/regmap.h>
 #include <linux/types.h>
 #include <linux/usb.h>

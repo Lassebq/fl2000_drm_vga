@@ -177,7 +177,7 @@ static void fl2000_stream_work(struct work_struct *work)
 	struct usb_device *usb_dev = fl2000_dev->usb_dev;
 	struct fl2000_stream_buf *cur_sb;
 	struct urb *data_urb, *zero_urb;
-	int max_packet = usb_maxpacket(fl2000_dev->usb_dev, usb_sndbulkpipe(usb_dev, 1), 1);
+	int max_packet = usb_maxpacket(fl2000_dev->usb_dev, usb_sndbulkpipe(usb_dev, 1));
 
 
 	while (fl2000_dev->enabled) {
