@@ -263,9 +263,10 @@ static void fl2000_xrgb888_to_rgb888_line(u8 *dbuf, u32 *sbuf, u32 pixels)
 	unsigned int x, xx = 0;
 
 	for (x = 0; x < pixels; x++) {
-		dbuf[xx++ ^ 4] = (sbuf[x] & 0x000000FF) >> 0;
-		dbuf[xx++ ^ 4] = (sbuf[x] & 0x0000FF00) >> 8;
-		dbuf[xx++ ^ 4] = (sbuf[x] & 0x00FF0000) >> 16;
+		u32 pix = sbuf[x];
+		dbuf[xx++ ^ 4] = (pix & 0x000000FF) >> 0;
+		dbuf[xx++ ^ 4] = (pix & 0x0000FF00) >> 8;
+		dbuf[xx++ ^ 4] = (pix & 0x00FF0000) >> 16;
 	}
 }
 
@@ -274,9 +275,10 @@ static void fl2000_xrgb888_to_rgb565_line(u16 *dbuf, u32 *sbuf, u32 pixels)
 	unsigned int x;
 
 	for (x = 0; x < pixels; x++) {
-		u16 val565 = ((sbuf[x] & 0x00F80000) >> 8) |
-			     ((sbuf[x] & 0x0000FC00) >> 5) |
-			     ((sbuf[x] & 0x000000F8) >> 3);
+		u32 pix = sbuf[x];
+		u16 val565 = ((pix & 0x00F80000) >> 8) |
+			     ((pix & 0x0000FC00) >> 5) |
+			     ((pix & 0x000000F8) >> 3);
 		dbuf[x ^ 2] = val565;
 	}
 }
@@ -286,9 +288,10 @@ static void fl2000_xrgb888_to_rgb233_line(u8 *dbuf, u32 *sbuf, u32 pixels)
 	unsigned int x;
 
 	for (x = 0; x < pixels; x++) {
-		u8 val233 = ((sbuf[x] & 0x00c00000) >> 16) |
-			    ((sbuf[x] & 0x0000e000) >> 10) |
-			    ((sbuf[x] & 0x000000e0) >> 5);
+		u32 pix = sbuf[x];
+		u8 val233 = ((pix & 0x00c00000) >> 16) |
+			    ((pix & 0x0000e000) >> 10) |
+			    ((pix & 0x000000e0) >> 5);
 		dbuf[x ^ 4] = val233;
 	}
 }
