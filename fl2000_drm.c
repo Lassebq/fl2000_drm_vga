@@ -402,7 +402,7 @@ static int fl2000_display_check(struct drm_simple_display_pipe *pipe,
 static void fb2000_dirty(struct drm_framebuffer *fb,
 			 const struct iosys_map *map, struct drm_rect *rect)
 {
-	int idx, ret;
+	int ret;
 	struct drm_device *drm = fb->dev;
 	struct fl2000 *fl2000_dev = drm->dev_private;
 
