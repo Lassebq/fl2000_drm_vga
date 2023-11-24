@@ -154,13 +154,14 @@ static void fl2000_stream_data_completion(struct urb *urb)
 		}
 		spin_unlock(&fl2000_dev->list_lock);
 
-		drm_crtc_handle_vblank(&fl2000_dev->pipe.crtc);
-
 		/* Schedule another URB */
 		complete(&fl2000_dev->stream_complete);
 
 		fl2000_urb_status(usb_dev, urb->status, urb->pipe);
 	}
+
+	// Send a vblank event even when there is an error
+	drm_crtc_handle_vblank(&fl2000_dev->pipe.crtc);
 
 	usb_free_urb(urb);
 }
