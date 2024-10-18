@@ -12,6 +12,7 @@
  */
 
 #include <linux/scatterlist.h>
+#include <linux/vmalloc.h>
 
 #include <drm/drm_managed.h>
 #include <drm/drm_vblank.h>
