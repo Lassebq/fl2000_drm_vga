@@ -4,6 +4,7 @@
  * (C) Copyright 2018-2020, Artem Mygaiev
  */
 
+#include <linux/version.h>
 #include <linux/dma-buf.h>
 #include <linux/printk.h>
 #include <linux/usb.h>
@@ -12,7 +13,11 @@
 #include <drm/drm_damage_helper.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_fb_helper.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)
+#include <drm/drm_fbdev_ttm.h>
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0)
 #include <drm/drm_fbdev_generic.h>
+#endif
 #include <drm/drm_fourcc.h>
 #include <drm/drm_framebuffer.h>
 #include <drm/drm_gem_atomic_helper.h>
@@ -566,7 +571,11 @@ int fl2000_drm_init(struct fl2000 *fl2000_dev)
 	fl2000_reset(usb_dev);
 	fl2000_usb_magic(usb_dev);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,11,0)
+	drm_fbdev_ttm_setup(drm, FL2000_FB_BPP);
+#else
 	drm_fbdev_generic_setup(drm, FL2000_FB_BPP);
+#endif
 
 	return 0;
 
