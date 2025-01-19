@@ -2,7 +2,23 @@
 
 Added VGA support to this [driver](https://github.com/klogg/fl2000_drm). HDMI support has been removed.
 
-### Building driver
+### Installing driver automatically with DKMS
+
+[Install DKMS](https://github.com/dell/dkms?tab=readme-ov-file) (your distribution will likely have a package for it), then check out the code and type:
+```
+dkms install .
+```
+with sudo or in a root shell. DKMS will automatically install the driver into your kernel and reinstall it on kernel updates.
+
+To update the version used by DKMS (when this driver is updated), check out the updated code and run the above command again.
+
+If DKMS reports that the DKMS tree already contains fl2000\_drm, run:
+```
+dkms install . --force
+```
+with sudo or in a root shell.
+
+### Building driver manually
 
 Check out the code and type
 ```
